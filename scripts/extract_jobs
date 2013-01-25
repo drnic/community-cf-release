@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+
+require "yaml"
+require "fileutils"
+
+# for the #sh helper
+require "rake"
+require "rake/file_utils"
+
+original_cf_release_dir = ARGV.shift
+target_jobs_dir = File.join(original_cf_release_dir, "jobs") if original_cf_release_dir
+unless original_cf_release_dir && File.directory?(target_jobs_dir)
+  puts "USAGE: scripts/extract_job path/to/cf-release"
+  exit 1
+end
+
+class ImportJobs
+  include FileUtils
+
+  def initialize(target_jobs_dir)
+    @target_jobs_dir = target_jobs_dir
+  end
+
+  def editions
+    %w[jobs/micro-v1.yml jobs/micro-v2.yml]
+  end
+
+  def perform
+    imported_jobs = []
+
+    editions.each do |edition|
+      puts "Processing #{edition}:"
+      edition_jobs = YAML.load_file(edition)
+      edition_jobs.each do |role, jobs|
+        puts " - #{role}:"
+        jobs.each do |job|
+          if imported_jobs.include?(job)
+            puts "    #{job}: skipping, already imported"
+          else
+            job_to_extract = File.join(@target_jobs_dir, job)
+            unless File.directory?(job_to_extract)
+              puts "    #{job}: ERROR - cannot find job #{job} to extract!"
+              next
+            end
+            puts "    #{job}: importing..."
+            sh "bosh-gen extract-job #{job_to_extract}"
+            imported_jobs << job
+          end
+        end
+      end
+    end
+  end
+end
+
+ImportJobs.new(target_jobs_dir).perform
